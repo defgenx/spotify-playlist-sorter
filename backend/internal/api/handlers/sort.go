@@ -9,6 +9,8 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/adelvecchio/spotify-playlist-sorter/internal/api/middleware"
+	"github.com/adelvecchio/spotify-playlist-sorter/internal/domain"
+	"github.com/adelvecchio/spotify-playlist-sorter/internal/genre"
 	"github.com/adelvecchio/spotify-playlist-sorter/internal/service"
 	spotifyClient "github.com/adelvecchio/spotify-playlist-sorter/internal/spotify"
 )
@@ -38,7 +40,15 @@ func NewSortHandler(
 
 // GeneratePlanRequest represents a request to generate a sort plan
 type GeneratePlanRequest struct {
-	DryRun bool `json:"dryRun"`
+	DryRun            bool     `json:"dryRun"`
+	EnabledGroups     []string `json:"enabledGroups"`     // Parent genres to group (e.g., ["Rock", "Pop"])
+	DisabledPlaylists []string `json:"disabledPlaylists"` // Genre names to skip creating playlists for
+}
+
+// GeneratePlanResponse includes the sort plan and grouping suggestions
+type GeneratePlanResponse struct {
+	*domain.SortPlan
+	GroupingSuggestions []genre.GroupSuggestion `json:"groupingSuggestions"`
 }
 
 // GeneratePlan generates a sort plan
@@ -91,15 +101,47 @@ func (h *SortHandler) GeneratePlan(c *gin.Context) {
 		return
 	}
 
+	// Convert enabled groups to map for easier lookup
+	enabledGroupsMap := make(map[string]bool)
+	for _, g := range req.EnabledGroups {
+		enabledGroupsMap[g] = true
+	}
+
+	// Convert disabled playlists to map for easier lookup
+	disabledPlaylistsMap := make(map[string]bool)
+	for _, p := range req.DisabledPlaylists {
+		disabledPlaylistsMap[p] = true
+	}
+
 	// Generate sort plan
-	log.Info().Str("userID", userID).Bool("dryRun", req.DryRun).Msg("Generating sort plan")
-	plan, err := h.sorterService.GenerateSortPlan(ctx, analysis, userID, req.DryRun)
+	log.Info().Str("userID", userID).Bool("dryRun", req.DryRun).Int("enabledGroups", len(req.EnabledGroups)).Int("disabledPlaylists", len(req.DisabledPlaylists)).Msg("Generating sort plan")
+	plan, err := h.sorterService.GenerateSortPlan(ctx, analysis, userID, req.DryRun, enabledGroupsMap)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to generate sort plan")
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to generate sort plan: " + err.Error(),
 		})
 		return
+	}
+
+	// Filter out disabled playlists from playlistsToCreate
+	if len(disabledPlaylistsMap) > 0 {
+		filteredPlaylists := []string{}
+		for _, p := range plan.PlaylistsToCreate {
+			if !disabledPlaylistsMap[p] {
+				filteredPlaylists = append(filteredPlaylists, p)
+			}
+		}
+		plan.PlaylistsToCreate = filteredPlaylists
+
+		// Also filter out tracks that would go to disabled playlists
+		filteredTracksToAdd := []domain.TrackMove{}
+		for _, t := range plan.TracksToAdd {
+			if !disabledPlaylistsMap[t.ToPlaylistName] {
+				filteredTracksToAdd = append(filteredTracksToAdd, t)
+			}
+		}
+		plan.TracksToAdd = filteredTracksToAdd
 	}
 
 	log.Info().
@@ -110,12 +152,19 @@ func (h *SortHandler) GeneratePlan(c *gin.Context) {
 		Int("playlistsToCreate", len(plan.PlaylistsToCreate)).
 		Msg("Sort plan generated")
 
-	c.JSON(http.StatusOK, plan)
+	response := GeneratePlanResponse{
+		SortPlan:            plan,
+		GroupingSuggestions: analysis.GroupingSuggestions,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // ExecutePlanRequest represents a request to execute a sort plan
 type ExecutePlanRequest struct {
-	DryRun bool `json:"dryRun"`
+	DryRun            bool     `json:"dryRun"`
+	EnabledGroups     []string `json:"enabledGroups"`     // Parent genres to group (e.g., ["Rock", "Pop"])
+	DisabledPlaylists []string `json:"disabledPlaylists"` // Genre names to skip creating playlists for
 }
 
 // ExecutePlan executes a sort plan
@@ -168,9 +217,15 @@ func (h *SortHandler) ExecutePlan(c *gin.Context) {
 		return
 	}
 
+	// Convert enabled groups to map for easier lookup
+	enabledGroupsMap := make(map[string]bool)
+	for _, g := range req.EnabledGroups {
+		enabledGroupsMap[g] = true
+	}
+
 	// Generate sort plan
 	log.Info().Str("userID", userID).Bool("dryRun", req.DryRun).Msg("Generating sort plan for execution")
-	plan, err := h.sorterService.GenerateSortPlan(ctx, analysis, userID, req.DryRun)
+	plan, err := h.sorterService.GenerateSortPlan(ctx, analysis, userID, req.DryRun, enabledGroupsMap)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to generate sort plan")
 		c.JSON(http.StatusInternalServerError, gin.H{

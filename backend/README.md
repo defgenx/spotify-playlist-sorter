@@ -8,6 +8,9 @@ A Go backend service that automatically organizes your Spotify liked songs into 
 - Fetch and analyze liked songs and playlists
 - Automatic genre detection from artist metadata
 - Intelligent playlist organization with fuzzy genre matching
+- **Genre Grouping**: Merge similar sub-genres into parent categories (e.g., "indie rock" + "alternative rock" → "Rock")
+- **Smart Subgenre Detection**: Automatically detect parent genres from subgenre names using keyword matching
+- **Playlist Filtering**: Selectively disable specific playlists from being created
 - Real-time progress updates via Server-Sent Events (SSE)
 - Dry-run mode for previewing changes
 - Managed playlists with automatic tagging
@@ -37,7 +40,8 @@ backend/
 │   │   ├── playlist.go            # Playlist domain model
 │   │   └── sortplan.go            # Sort plan models
 │   ├── genre/
-│   │   └── normalizer.go          # Genre normalization & matching
+│   │   ├── normalizer.go          # Genre normalization & matching
+│   │   └── grouper.go             # Genre grouping & parent detection
 │   ├── service/
 │   │   ├── library.go             # Library analysis service
 │   │   ├── sorter.go              # Sort plan generation
@@ -129,9 +133,11 @@ The server will start on `http://localhost:8080` by default.
 ### Sort
 
 - `POST /api/sort/plan` - Generate a sort plan
-  - Body: `{"dryRun": true}`
+  - Body: `{"dryRun": true, "enabledGroups": ["Rock", "Pop"], "disabledPlaylists": ["indie rock"]}`
+  - `enabledGroups`: Parent genres to group sub-genres into (optional)
+  - `disabledPlaylists`: Genre names to exclude from playlist creation (optional)
 - `POST /api/sort/execute` - Execute sort plan
-  - Body: `{"dryRun": false}`
+  - Body: `{"dryRun": false, "enabledGroups": ["Rock"], "disabledPlaylists": []}`
 
 ### Events
 
@@ -159,6 +165,30 @@ The server will start on `http://localhost:8080` by default.
    - Adds tracks to correct playlists
    - Removes tracks from incorrect managed playlists
    - Creates "Uncategorized" playlist for tracks without genres
+
+## Genre Grouping
+
+The app supports grouping related sub-genres into parent categories to reduce the number of playlists:
+
+### Supported Parent Genres
+
+- **Rock**: indie rock, alternative rock, classic rock, punk rock, grunge, etc.
+- **Pop**: indie pop, synth-pop, electropop, dream pop, k-pop, etc.
+- **Electronic**: house, techno, trance, dubstep, ambient, synthwave, etc.
+- **Hip-Hop**: hip hop, rap, trap, drill, boom bap, etc.
+- **R&B/Soul**: r&b, soul, neo soul, funk, motown
+- **Metal**: heavy metal, death metal, metalcore, nu metal, etc.
+- **Jazz**: jazz, smooth jazz, bebop, swing, big band
+- **Classical**: classical, baroque, orchestral, opera
+- **Country**: country, bluegrass, americana, country rock
+- **Folk**: folk, indie folk, acoustic, singer-songwriter
+- **Reggae**: reggae, dancehall, dub, ska
+- **Latin**: latin, salsa, bachata, reggaeton, bossa nova
+- **Blues**: blues, delta blues, chicago blues
+
+### Smart Subgenre Detection
+
+Even if a genre isn't explicitly mapped, the app uses keyword matching to detect parent genres. For example, "shoegaze rock" will be grouped under "Rock" because it contains the keyword "rock".
 
 ## Managed Playlists
 

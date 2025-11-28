@@ -11,14 +11,20 @@ export function useLibraryStats() {
 
 export function useCreateSortPlan() {
   const isDryRun = useUIStore((state) => state.isDryRun);
+  const enabledGroups = useUIStore((state) => state.enabledGroups);
+  const disabledPlaylists = useUIStore((state) => state.disabledPlaylists);
 
   return useMutation({
-    mutationFn: () => api.createSortPlan(isDryRun),
+    mutationFn: () => api.createSortPlan(isDryRun, enabledGroups, disabledPlaylists),
   });
 }
 
 export function useExecuteSortPlan() {
+  const isDryRun = useUIStore((state) => state.isDryRun);
+  const enabledGroups = useUIStore((state) => state.enabledGroups);
+  const disabledPlaylists = useUIStore((state) => state.disabledPlaylists);
+
   return useMutation({
-    mutationFn: (planId: string) => api.executeSortPlan(planId),
+    mutationFn: () => api.executeSortPlan(isDryRun, enabledGroups, disabledPlaylists),
   });
 }
