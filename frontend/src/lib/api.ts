@@ -51,17 +51,17 @@ class ApiClient {
   }
 
   // Sort
-  async createSortPlan(dryRun: boolean): Promise<SortPlan> {
+  async createSortPlan(dryRun: boolean, enabledGroups: string[] = [], disabledPlaylists: string[] = []): Promise<SortPlan> {
     return this.fetch<SortPlan>('/sort/plan', {
       method: 'POST',
-      body: JSON.stringify({ dryRun }),
+      body: JSON.stringify({ dryRun, enabledGroups, disabledPlaylists }),
     });
   }
 
-  async executeSortPlan(planId: string): Promise<void> {
+  async executeSortPlan(dryRun: boolean, enabledGroups: string[] = [], disabledPlaylists: string[] = []): Promise<void> {
     await this.fetch(`/sort/execute`, {
       method: 'POST',
-      body: JSON.stringify({ planId }),
+      body: JSON.stringify({ dryRun, enabledGroups, disabledPlaylists }),
     });
   }
 

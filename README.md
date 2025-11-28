@@ -1,5 +1,8 @@
 # Spotify Playlist Sorter
 
+> **Warning**
+> This project is a **work in progress** and was heavily vibe-coded with AI assistance. Expect rough edges, potential bugs, and incomplete features. Use at your own risk and don't blame the robots if your playlists get weird.
+
 Automatically organize your Spotify liked songs into genre-based playlists.
 
 ## Features

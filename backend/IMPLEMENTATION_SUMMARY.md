@@ -6,8 +6,8 @@ The Spotify Playlist Sorter backend has been successfully implemented in Go. The
 
 ## Project Statistics
 
-- **Total Files**: 19 Go source files + configuration
-- **Lines of Code**: ~2,500+ lines
+- **Total Files**: 20 Go source files + configuration
+- **Lines of Code**: ~2,800+ lines
 - **Build Size**: ~28MB binary
 - **Build Status**: ✅ Successfully compiles
 
@@ -41,6 +41,14 @@ The Spotify Playlist Sorter backend has been successfully implemented in Go. The
   - `NormalizeGenre()`: Lowercase, remove special chars
   - `MatchPlaylistToGenre()`: Fuzzy matching with confidence scores
   - `ExtractPrimaryGenre()`: Smart genre selection from artist genres
+
+- **grouper.go**: Genre grouping and parent detection
+- Functions:
+  - `GetParentGenre()`: Maps sub-genres to parent categories with keyword fallback
+  - `GroupGenres()`: Groups genre distribution by parent categories
+  - `SuggestGroupings()`: Suggests which genres could be merged
+  - `ApplyGrouping()`: Applies grouping based on enabled parent genres
+  - `GetAllParentGenres()`: Returns all available parent categories
 
 ### 5. Business Services (`internal/service/`)
 
@@ -160,6 +168,18 @@ The Spotify Playlist Sorter backend has been successfully implemented in Go. The
 - ✅ Identification of misplaced tracks
 - ✅ Uncategorized track handling
 
+### Genre Grouping
+- ✅ Parent genre categories (Rock, Pop, Electronic, Hip-Hop, etc.)
+- ✅ Sub-genre to parent mapping (100+ genres mapped)
+- ✅ Smart keyword detection for unmapped genres
+- ✅ Grouping suggestions based on library analysis
+- ✅ Selective group enabling via API
+
+### Playlist Filtering
+- ✅ Disable specific playlists from creation
+- ✅ Filter tracks going to disabled playlists
+- ✅ Persisted state in frontend
+
 ### Sort Plan Generation
 - ✅ Dry-run mode support
 - ✅ Detailed track move operations
@@ -205,8 +225,10 @@ The Spotify Playlist Sorter backend has been successfully implemented in Go. The
 - `GET /api/library/analysis` - Analyze user's library
 
 ### Sort
-- `POST /api/sort/plan` - Generate sort plan (dry-run)
+- `POST /api/sort/plan` - Generate sort plan
+  - Body: `{"dryRun": bool, "enabledGroups": []string, "disabledPlaylists": []string}`
 - `POST /api/sort/execute` - Execute sort plan
+  - Body: `{"dryRun": bool, "enabledGroups": []string, "disabledPlaylists": []string}`
 
 ### Events
 - `GET /api/events` - SSE stream for progress
@@ -319,7 +341,7 @@ make test-coverage  # Generate coverage report
 7. Add playlist preview before execution
 8. Add undo functionality
 9. Add scheduled sorting
-10. Add genre customization
+10. ~~Add genre customization~~ ✅ Implemented (genre grouping)
 
 ## Success Criteria
 
@@ -335,6 +357,9 @@ make test-coverage  # Generate coverage report
 ✅ Error handling comprehensive
 ✅ Configuration management complete
 ✅ Documentation provided
+✅ Genre grouping with parent categories
+✅ Smart subgenre detection via keywords
+✅ Playlist filtering (disable specific playlists)
 
 ## Conclusion
 

@@ -25,23 +25,24 @@ func NewSorterService(libraryService *LibraryService) *SorterService {
 }
 
 // GenerateSortPlan creates a sort plan based on library analysis
-func (s *SorterService) GenerateSortPlan(ctx context.Context, analysis *LibraryAnalysis, userID string, dryRun bool) (*domain.SortPlan, error) {
-	log.Info().Str("userID", userID).Bool("dryRun", dryRun).Msg("Generating sort plan")
+func (s *SorterService) GenerateSortPlan(ctx context.Context, analysis *LibraryAnalysis, userID string, dryRun bool, enabledGroups map[string]bool) (*domain.SortPlan, error) {
+	log.Info().Str("userID", userID).Bool("dryRun", dryRun).Int("enabledGroups", len(enabledGroups)).Msg("Generating sort plan")
 
 	plan := &domain.SortPlan{
-		ID:               uuid.New().String(),
-		CreatedAt:        time.Now(),
-		DryRun:           dryRun,
-		TotalLikedTracks: len(analysis.Tracks),
-		TracksToAdd:      []domain.TrackMove{},
-		TracksToRemove:   []domain.TrackMove{},
-		PlaylistsToCreate: []string{},
+		ID:                  uuid.New().String(),
+		CreatedAt:           time.Now(),
+		DryRun:              dryRun,
+		TotalLikedTracks:    len(analysis.Tracks),
+		TracksToAdd:         []domain.TrackMove{},
+		TracksToRemove:      []domain.TrackMove{},
+		PlaylistsToCreate:   []string{},
 		UncategorizedTracks: []domain.Track{},
-		GenreStats:       []domain.GenreStat{},
+		GenreStats:          []domain.GenreStat{},
+		EnabledGroups:       enabledGroups,
 	}
 
-	// Build genre to playlist mapping
-	genreToPlaylist := s.libraryService.BuildGenreToPlaylistMap(analysis.Playlists, userID)
+	// Build genre to playlist mapping (with grouping awareness)
+	genreToPlaylist := s.libraryService.BuildGenreToPlaylistMap(analysis.Playlists, userID, enabledGroups)
 
 	// Track which genres need new playlists
 	neededGenres := make(map[string]bool)
@@ -60,12 +61,14 @@ func (s *SorterService) GenerateSortPlan(ctx context.Context, analysis *LibraryA
 			continue
 		}
 
-		normalizedGenre := genre.NormalizeGenre(track.PrimaryGenre)
+		// Apply grouping if enabled for this genre's parent
+		effectiveGenre := genre.ApplyGrouping(track.PrimaryGenre, enabledGroups)
+		normalizedGenre := genre.NormalizeGenre(effectiveGenre)
 		targetPlaylist, exists := genreToPlaylist[normalizedGenre]
 
 		if !exists {
-			// Need to create new playlist for this genre
-			neededGenres[track.PrimaryGenre] = true
+			// Need to create new playlist for this genre (use effective genre, not original)
+			neededGenres[effectiveGenre] = true
 		}
 
 		// Check if track is already in the correct playlist
@@ -87,23 +90,28 @@ func (s *SorterService) GenerateSortPlan(ctx context.Context, analysis *LibraryA
 			}
 
 			toPlaylistID := ""
-			toPlaylistName := track.PrimaryGenre
+			toPlaylistName := effectiveGenre
 			if exists {
 				toPlaylistID = targetPlaylist.ID
 				toPlaylistName = targetPlaylist.Name
 			}
 
+			reason := "Song belongs to this genre"
+			if effectiveGenre != track.PrimaryGenre {
+				reason = fmt.Sprintf("Song genre '%s' grouped into '%s'", track.PrimaryGenre, effectiveGenre)
+			}
+
 			plan.TracksToAdd = append(plan.TracksToAdd, domain.TrackMove{
-				TrackID:        track.ID,
-				TrackName:      track.Name,
-				ArtistName:     artistName,
-				AlbumImage:     track.AlbumImage,
-				Genre:          track.PrimaryGenre,
-				FromPlaylist:   "",
+				TrackID:          track.ID,
+				TrackName:        track.Name,
+				ArtistName:       artistName,
+				AlbumImage:       track.AlbumImage,
+				Genre:            track.PrimaryGenre,
+				FromPlaylist:     "",
 				FromPlaylistName: "",
-				ToPlaylist:     toPlaylistID,
-				ToPlaylistName: toPlaylistName,
-				Reason:         "Song belongs to this genre",
+				ToPlaylist:       toPlaylistID,
+				ToPlaylistName:   toPlaylistName,
+				Reason:           reason,
 			})
 		}
 
@@ -122,11 +130,18 @@ func (s *SorterService) GenerateSortPlan(ctx context.Context, analysis *LibraryA
 				continue
 			}
 
-			// Check if this is the correct playlist for the track's genre
-			playlistGenreNorm := genre.NormalizeGenre(playlist.AssignedGenre)
-			trackGenreNorm := genre.NormalizeGenre(track.PrimaryGenre)
+			// Apply grouping to both playlist and track genres for comparison
+			playlistEffectiveGenre := genre.ApplyGrouping(playlist.AssignedGenre, enabledGroups)
+			playlistGenreNorm := genre.NormalizeGenre(playlistEffectiveGenre)
+			trackEffectiveGenre := genre.ApplyGrouping(track.PrimaryGenre, enabledGroups)
+			trackGenreNorm := genre.NormalizeGenre(trackEffectiveGenre)
 
-			if playlistGenreNorm != trackGenreNorm {
+			// Check if this playlist is the correct target playlist for this track
+			isTargetPlaylist := exists && targetPlaylist != nil && playlist.ID == targetPlaylist.ID
+
+			// Remove track if it's in the wrong playlist (genres don't match after grouping)
+			// and it's not already in the correct target playlist
+			if playlistGenreNorm != trackGenreNorm && !isTargetPlaylist {
 				// Track is in wrong playlist
 				artistName := ""
 				if len(track.Artists) > 0 {
@@ -143,7 +158,7 @@ func (s *SorterService) GenerateSortPlan(ctx context.Context, analysis *LibraryA
 					FromPlaylistName: playlist.Name,
 					ToPlaylist:       "",
 					ToPlaylistName:   "",
-					Reason:           fmt.Sprintf("Song genre (%s) doesn't match playlist (%s)", track.PrimaryGenre, playlist.AssignedGenre),
+					Reason:           fmt.Sprintf("Song genre (%s) doesn't match playlist (%s)", trackEffectiveGenre, playlistEffectiveGenre),
 				})
 			}
 		}

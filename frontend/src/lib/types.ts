@@ -37,6 +37,14 @@ export interface SortPlan {
   playlistsToCreate: string[];
   uncategorizedTracks: Track[];
   genreStats: GenreStat[];
+  groupingSuggestions?: GroupSuggestion[];
+}
+
+export interface GroupSuggestion {
+  parentGenre: string;
+  childGenres: string[];
+  totalTracks: number;
+  playlistsToMerge: number;
 }
 
 export interface User {

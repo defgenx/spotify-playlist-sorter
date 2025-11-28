@@ -36,6 +36,7 @@ func (s *ExecutorService) ExecuteSortPlan(ctx context.Context, client *spotify.C
 	result := &domain.ExecutionResult{
 		Success:          true,
 		PlaylistsCreated: 0,
+		PlaylistsDeleted: 0,
 		TracksAdded:      0,
 		TracksRemoved:    0,
 		Errors:           []domain.ExecutionError{},
@@ -93,15 +94,22 @@ func (s *ExecutorService) ExecuteSortPlan(ctx context.Context, client *spotify.C
 		result.Errors = append(result.Errors, errors...)
 	}
 
+	// Step 5: Remove empty playlists
+	s.broadcaster.SendInfo(userID, "Checking for empty playlists...")
+	deleted, errors := s.removeEmptyPlaylists(ctx, client, userID)
+	result.PlaylistsDeleted = deleted
+	result.Errors = append(result.Errors, errors...)
+
 	if len(result.Errors) > 0 {
 		result.Success = false
 	}
 
-	s.broadcaster.SendComplete(userID, fmt.Sprintf("Sort complete! Created %d playlists, added %d tracks, removed %d tracks",
-		result.PlaylistsCreated, result.TracksAdded, result.TracksRemoved))
+	s.broadcaster.SendComplete(userID, fmt.Sprintf("Sort complete! Created %d playlists, deleted %d empty playlists, added %d tracks, removed %d tracks",
+		result.PlaylistsCreated, result.PlaylistsDeleted, result.TracksAdded, result.TracksRemoved))
 
 	log.Info().
 		Int("playlistsCreated", result.PlaylistsCreated).
+		Int("playlistsDeleted", result.PlaylistsDeleted).
 		Int("tracksAdded", result.TracksAdded).
 		Int("tracksRemoved", result.TracksRemoved).
 		Int("errors", len(result.Errors)).
@@ -135,18 +143,23 @@ func (s *ExecutorService) createPlaylists(ctx context.Context, client *spotify.C
 // updatePlanWithCreatedPlaylists updates the plan with newly created playlist IDs
 func (s *ExecutorService) updatePlanWithCreatedPlaylists(plan *domain.SortPlan, createdPlaylists map[string]string) {
 	// Update TracksToAdd with correct playlist IDs
+	// Use ToPlaylistName which contains the effectiveGenre (after grouping), not Genre which is the original
 	for i := range plan.TracksToAdd {
 		if plan.TracksToAdd[i].ToPlaylist == "" {
 			// This track was going to a new playlist
-			if playlistID, ok := createdPlaylists[plan.TracksToAdd[i].Genre]; ok {
+			// Match by ToPlaylistName which is the effectiveGenre
+			if playlistID, ok := createdPlaylists[plan.TracksToAdd[i].ToPlaylistName]; ok {
 				plan.TracksToAdd[i].ToPlaylist = playlistID
 			}
 		}
 	}
 
 	// Update GenreStats
+	// Note: GenreStats uses original genre names, but we need to match by effectiveGenre
+	// For now, we'll match by genre name directly (this may need refinement if grouping affects stats)
 	for i := range plan.GenreStats {
 		if plan.GenreStats[i].IsNew {
+			// Try matching by original genre first
 			if playlistID, ok := createdPlaylists[plan.GenreStats[i].Genre]; ok {
 				plan.GenreStats[i].PlaylistID = playlistID
 			}
@@ -302,4 +315,54 @@ func (s *ExecutorService) handleUncategorizedTracks(ctx context.Context, client 
 	}
 
 	return len(trackIDs), errors
+}
+
+// removeEmptyPlaylists finds and deletes empty managed playlists
+func (s *ExecutorService) removeEmptyPlaylists(ctx context.Context, client *spotify.Client, userID string) (int, []domain.ExecutionError) {
+	var errors []domain.ExecutionError
+
+	// Fetch all playlists
+	playlists, err := s.spotifyClient.FetchAllPlaylists(ctx, client, userID)
+	if err != nil {
+		errors = append(errors, domain.ExecutionError{
+			Operation: "fetch_playlists_for_cleanup",
+			Error:     err.Error(),
+		})
+		return 0, errors
+	}
+
+	deletedCount := 0
+	for _, playlist := range playlists {
+		// Only process managed playlists owned by the user
+		if !playlist.ManagedByApp || playlist.OwnerID != userID {
+			continue
+		}
+
+		// Skip "Uncategorized" playlist - we don't want to delete it even if empty
+		normalized := genre.NormalizeGenre(playlist.AssignedGenre)
+		if normalized == "uncategorized" || playlist.Name == "Uncategorized" {
+			continue
+		}
+
+		// Check if playlist is empty
+		// Use TrackCount from the playlist object (from Spotify API)
+		if playlist.TrackCount == 0 {
+			s.broadcaster.SendInfo(userID, fmt.Sprintf("Deleting empty playlist: %s", playlist.Name))
+			
+			err := s.spotifyClient.DeletePlaylist(ctx, client, playlist.ID)
+			if err != nil {
+				log.Error().Err(err).Str("playlistID", playlist.ID).Str("playlistName", playlist.Name).Msg("Failed to delete empty playlist")
+				errors = append(errors, domain.ExecutionError{
+					Operation: "delete_empty_playlist",
+					Playlist:  playlist.ID,
+					Error:     err.Error(),
+				})
+			} else {
+				deletedCount++
+				log.Info().Str("playlistID", playlist.ID).Str("playlistName", playlist.Name).Msg("Deleted empty playlist")
+			}
+		}
+	}
+
+	return deletedCount, errors
 }

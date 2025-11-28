@@ -22,8 +22,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o spotify-sorter cm
 # Runtime stage
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS
-RUN apk --no-cache add ca-certificates
+# Install ca-certificates for HTTPS and wget for healthchecks
+RUN apk --no-cache add ca-certificates wget
 
 WORKDIR /root/
 

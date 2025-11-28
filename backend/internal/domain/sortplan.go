@@ -3,15 +3,16 @@ package domain
 import "time"
 
 type SortPlan struct {
-	ID                  string       `json:"id"`
-	CreatedAt           time.Time    `json:"createdAt"`
-	DryRun              bool         `json:"dryRun"`
-	TotalLikedTracks    int          `json:"totalLikedTracks"`
-	TracksToAdd         []TrackMove  `json:"tracksToAdd"`
-	TracksToRemove      []TrackMove  `json:"tracksToRemove"`
-	PlaylistsToCreate   []string     `json:"playlistsToCreate"` // Genre names
-	UncategorizedTracks []Track      `json:"uncategorizedTracks"`
-	GenreStats          []GenreStat  `json:"genreStats"`
+	ID                  string          `json:"id"`
+	CreatedAt           time.Time       `json:"createdAt"`
+	DryRun              bool            `json:"dryRun"`
+	TotalLikedTracks    int             `json:"totalLikedTracks"`
+	TracksToAdd         []TrackMove     `json:"tracksToAdd"`
+	TracksToRemove      []TrackMove     `json:"tracksToRemove"`
+	PlaylistsToCreate   []string        `json:"playlistsToCreate"` // Genre names
+	UncategorizedTracks []Track         `json:"uncategorizedTracks"`
+	GenreStats          []GenreStat     `json:"genreStats"`
+	EnabledGroups       map[string]bool `json:"enabledGroups"` // Parent genres that are enabled for grouping
 }
 
 type TrackMove struct {
@@ -37,6 +38,7 @@ type GenreStat struct {
 type ExecutionResult struct {
 	Success           bool              `json:"success"`
 	PlaylistsCreated  int               `json:"playlistsCreated"`
+	PlaylistsDeleted  int               `json:"playlistsDeleted"`
 	TracksAdded       int               `json:"tracksAdded"`
 	TracksRemoved     int               `json:"tracksRemoved"`
 	Errors            []ExecutionError  `json:"errors"`

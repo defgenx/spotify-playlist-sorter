@@ -1,0 +1,40 @@
+# Development override for docker-compose.yml
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: builder
+    volumes:
+      - ./backend:/app
+      - go-modules:/go/pkg/mod
+    working_dir: /app
+    command: go run ./cmd/server/main.go
+    environment:
+      - PORT=8080
+      - FRONTEND_URL=http://localhost:3000
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:80
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - SPOTIFY_REDIRECT_URL=${SPOTIFY_REDIRECT_URL:-http://localhost:3001/api/auth/callback}
+      - SESSION_SECRET=${SESSION_SECRET:-change-me-in-development}
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+    working_dir: /app
+    command: npm run dev -- --host 0.0.0.0 --port 80
+    ports:
+      - "3000:80"
+
+volumes:
+  go-modules:
+  frontend-node-modules:
+

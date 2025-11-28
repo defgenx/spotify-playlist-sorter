@@ -292,6 +292,20 @@ func (c *Client) GetCurrentUser(ctx context.Context, client *spotify.Client) (*s
 	return client.CurrentUser(ctx)
 }
 
+// DeletePlaylist deletes a playlist
+func (c *Client) DeletePlaylist(ctx context.Context, client *spotify.Client, playlistID string) error {
+	if err := c.withRateLimit(ctx); err != nil {
+		return err
+	}
+
+	err := client.UnfollowPlaylist(ctx, spotify.ID(playlistID))
+	if err != nil {
+		return fmt.Errorf("failed to delete playlist: %w", err)
+	}
+
+	return nil
+}
+
 // Helper functions
 
 func convertSavedTrack(st spotify.SavedTrack) domain.Track {

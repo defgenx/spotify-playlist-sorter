@@ -29,12 +29,14 @@ func NewLibraryService(client *spotifyClient.Client, broadcaster *sse.Broadcaste
 
 // LibraryAnalysis contains the complete analysis of user's library
 type LibraryAnalysis struct {
-	Tracks            []domain.Track    `json:"tracks"`
-	Playlists         []domain.Playlist `json:"playlists"`
-	GenreDistribution map[string]int    `json:"genreDistribution"`
-	TotalLikedSongs   int               `json:"totalLikedSongs"`
-	TracksWithGenre   int               `json:"tracksWithGenre"`
-	TracksWithoutGenre int              `json:"tracksWithoutGenre"`
+	Tracks             []domain.Track            `json:"tracks"`
+	Playlists          []domain.Playlist         `json:"playlists"`
+	GenreDistribution  map[string]int            `json:"genreDistribution"`
+	TotalLikedSongs    int                       `json:"totalLikedSongs"`
+	TracksWithGenre    int                       `json:"tracksWithGenre"`
+	TracksWithoutGenre int                       `json:"tracksWithoutGenre"`
+	GroupingSuggestions []genre.GroupSuggestion  `json:"groupingSuggestions"`
+	GenreGroups        map[string]*genre.GenreGroup `json:"genreGroups"`
 }
 
 // AnalyzeLibrary fetches all liked songs, playlists, and analyzes genres
@@ -114,20 +116,27 @@ func (s *LibraryService) AnalyzeLibrary(ctx context.Context, client *spotify.Cli
 		}
 	}
 
+	// Generate grouping suggestions (min 10 tracks per genre to suggest grouping)
+	groupingSuggestions := genre.SuggestGroupings(genreDistribution, 10)
+	genreGroups := genre.GroupGenres(genreDistribution)
+
 	log.Info().
 		Int("total", len(tracks)).
 		Int("withGenre", tracksWithGenre).
 		Int("withoutGenre", tracksWithoutGenre).
 		Int("uniqueGenres", len(genreDistribution)).
+		Int("groupingSuggestions", len(groupingSuggestions)).
 		Msg("Library analysis complete")
 
 	return &LibraryAnalysis{
-		Tracks:             tracks,
-		Playlists:          playlists,
-		GenreDistribution:  genreDistribution,
-		TotalLikedSongs:    len(tracks),
-		TracksWithGenre:    tracksWithGenre,
-		TracksWithoutGenre: tracksWithoutGenre,
+		Tracks:              tracks,
+		Playlists:           playlists,
+		GenreDistribution:   genreDistribution,
+		TotalLikedSongs:     len(tracks),
+		TracksWithGenre:     tracksWithGenre,
+		TracksWithoutGenre:  tracksWithoutGenre,
+		GroupingSuggestions: groupingSuggestions,
+		GenreGroups:         genreGroups,
 	}, nil
 }
 
@@ -234,13 +243,16 @@ func (s *LibraryService) GetManagedPlaylists(playlists []domain.Playlist, userID
 }
 
 // BuildGenreToPlaylistMap creates a mapping from normalized genre to playlist
-func (s *LibraryService) BuildGenreToPlaylistMap(playlists []domain.Playlist, userID string) map[string]*domain.Playlist {
+// When enabledGroups is provided, the map will be used with effective genres (after grouping)
+func (s *LibraryService) BuildGenreToPlaylistMap(playlists []domain.Playlist, userID string, enabledGroups map[string]bool) map[string]*domain.Playlist {
 	result := make(map[string]*domain.Playlist)
 
 	for i := range playlists {
 		if playlists[i].ManagedByApp && playlists[i].OwnerID == userID {
-			normalized := genre.NormalizeGenre(playlists[i].AssignedGenre)
+			playlistGenre := playlists[i].AssignedGenre
+			normalized := genre.NormalizeGenre(playlistGenre)
 			if normalized != "" {
+				// Map the playlist's genre directly
 				result[normalized] = &playlists[i]
 			}
 		}
